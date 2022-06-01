@@ -1,4 +1,4 @@
-FROM golang:1.13 AS builder
+FROM golang:1.17 AS builder
 
 ENV PKG=/go/src/github.com/RHEcosystemAppEng/dbaas-e2e-test-harness/
 WORKDIR ${PKG}
