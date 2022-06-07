@@ -21,6 +21,7 @@ import (
 	"k8s.io/client-go/util/homedir"
 	"os"
 	"path/filepath"
+	"regexp"
 	k8sClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"strings"
 	"time"
@@ -306,7 +307,12 @@ func getHref(dataServiceNode []*cdp.Node) string {
 		text := aNode.Children[0].NodeValue
 		fmt.Println(text)
 		if aNode.Children[0].NodeValue == "Database Access" {
-			return aNode.AttributeValue("href")
+			href := aNode.AttributeValue("href")
+			if !strings.Contains(href, "/ns/") {
+				re := regexp.MustCompile(`/(.*)/.*/(.*)`)
+				href = re.ReplaceAllString(href, "/$1/ns/openshift-console/$2")
+			}
+			return href
 		}
 	}
 	return ""
