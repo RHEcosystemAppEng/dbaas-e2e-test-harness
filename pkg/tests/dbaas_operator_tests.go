@@ -336,7 +336,7 @@ func getProvidersData(providerNames []string, ciSecretData map[string][]byte) []
 		var secretData = make(map[string][]byte)
 		for key, value := range ciSecretData {
 			if strings.HasPrefix(key, providerName) {
-				fmt.Printf("    %s: %s\n", key, value)
+				//fmt.Printf("    %s: %s\n", key, value)
 				var keyName = strings.Split(key, "-")
 				//create map of secret data
 				secretData[keyName[1]] = value
@@ -363,12 +363,6 @@ func getConfig() *rest.Config {
 
 		// use the current context in kubeconfig
 		config, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
-		fmt.Println("Config:")
-		fmt.Println(config)
-		fmt.Println(config.Host)
-
-		token := config.BearerToken
-		fmt.Println(token)
 
 	} else {
 		config, err = rest.InClusterConfig()
@@ -379,10 +373,10 @@ func getConfig() *rest.Config {
 	return config
 }
 
-func SetOpenShiftCookie(value, domain string) chromedp.Action {
+func SetOpenShiftCookie(tokenValue, domain string) chromedp.Action {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
 		expr := cdp.TimeSinceEpoch(time.Now().Add(180 * 24 * time.Hour))
-		success := network.SetCookie("openshift-session-token", value).
+		success := network.SetCookie("openshift-session-token", tokenValue).
 			WithExpires(&expr).
 			WithDomain(domain).
 			WithPath("/").

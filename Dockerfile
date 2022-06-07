@@ -7,7 +7,7 @@ WORKDIR ${PKG}
 COPY . .
 RUN make
 
-FROM registry.access.redhat.com/ubi7/ubi-minimal:latest
+FROM chromedp/headless-shell:latest
 
 COPY --from=builder /go/src/github.com/RHEcosystemAppEng/dbaas-e2e-test-harness/dbaas-e2e-test-harness.test dbaas-e2e-test-harness.test
 
