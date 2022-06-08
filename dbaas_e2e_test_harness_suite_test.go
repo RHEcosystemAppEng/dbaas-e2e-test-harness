@@ -5,8 +5,7 @@ import (
 	"testing"
 
 	"github.com/RHEcosystemAppEng/dbaas-e2e-test-harness/pkg/metadata"
-	. "github.com/onsi/ginkgo"
-	"github.com/onsi/ginkgo/reporters"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	_ "github.com/RHEcosystemAppEng/dbaas-e2e-test-harness/pkg/tests"
@@ -20,9 +19,12 @@ const (
 
 func TestDbaaSOperatorTestHarness(t *testing.T) {
 	RegisterFailHandler(Fail)
-	jUnitReporter := reporters.NewJUnitReporter(filepath.Join(testResultsDirectory, jUnitOutputFilename))
+	//jUnitReporter := reporters.NewJUnitReporter(filepath.Join(testResultsDirectory, jUnitOutputFilename))
 
-	RunSpecsWithDefaultAndCustomReporters(t, "DBaaS Operator Test Harness", []Reporter{jUnitReporter})
+	_, reporterConfig := GinkgoConfiguration()
+	reporterConfig.FullTrace = true
+	reporterConfig.JUnitReport = filepath.Join(testResultsDirectory, jUnitOutputFilename)
+	RunSpecs(t, "DBaaS Operator Test Harness", reporterConfig)
 
 	err := metadata.Instance.WriteToJSON(filepath.Join(testResultsDirectory, addonMetadataName))
 	if err != nil {
