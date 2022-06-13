@@ -37,10 +37,7 @@ var _ = Describe("Rhoda e2e Test", func() {
 		It("Should pass when operator installation is validated", func() {
 			fmt.Println("checking operator installation")
 			// Make sure the CRD exists
-			_, err = apiextensions.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), "dbaasplatforms.dbaas.redhat.com", meta.GetOptions{})
-			if err != nil {
-				AbortSuite(err.Error())
-			}
+			_, err := apiextensions.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), "dbaasplatforms.dbaas.redhat.com", meta.GetOptions{})
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
@@ -51,9 +48,7 @@ var _ = Describe("Rhoda e2e Test", func() {
 		clientset, err := kubernetes.NewForConfig(config)
 		Expect(err).NotTo(HaveOccurred())
 		ciSecret, err := clientset.CoreV1().Secrets("osde2e-ci-secrets").Get(context.TODO(), "ci-secrets", meta.GetOptions{})
-		if err != nil {
-			AbortSuite(err.Error())
-		}
+		Expect(err).NotTo(HaveOccurred())
 
 		//get the list of providers by getting providerList secret
 		if providerListSecret, ok := ciSecret.Data["providerList"]; ok {
@@ -61,7 +56,7 @@ var _ = Describe("Rhoda e2e Test", func() {
 			providerNames := strings.Split(string(providerListSecret), ",")
 			providers = getProvidersData(providerNames, ciSecret.Data)
 		} else {
-			AbortSuite("ProviderList secret was not found")
+			Expect(ok).To(BeTrue(), "ProviderList secret was not found")
 		}
 
 		//add dbaas scheme for inventory creation
