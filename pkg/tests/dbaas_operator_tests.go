@@ -47,18 +47,19 @@ var _ = Describe("Rhoda e2e Test", func() {
 		//Get ci-secret's data
 		clientset, err := kubernetes.NewForConfig(config)
 		Expect(err).NotTo(HaveOccurred())
-		ciSecret, err := clientset.CoreV1().Secrets("osde2e-ci-secrets").Get(context.TODO(), "ci-secrets", meta.GetOptions{})
-		Expect(err).NotTo(HaveOccurred())
-
-		//get the list of providers by getting providerList secret
-		if providerListSecret, ok := ciSecret.Data["providerList"]; ok {
-			//fmt.Printf("providerListSecret = %s, ok = %v\n", providerListSecret, ok)
-			providerNames := strings.Split(string(providerListSecret), ",")
-			providers = getProvidersData(providerNames, ciSecret.Data)
-		} else {
-			Expect(ok).To(BeTrue(), "ProviderList secret was not found")
-		}
-
+		var ciSecret *core.Secret
+		It("Getting ci-secret and providerList secret", func() {
+			ciSecret, err = clientset.CoreV1().Secrets("osde2e-ci-secrets").Get(context.TODO(), "ci-secrets", meta.GetOptions{})
+			Expect(err).NotTo(HaveOccurred())
+			//get the list of providers by getting providerList secret
+			if providerListSecret, ok := ciSecret.Data["providerList"]; ok {
+				//fmt.Printf("providerListSecret = %s, ok = %v\n", providerListSecret, ok)
+				providerNames := strings.Split(string(providerListSecret), ",")
+				providers = getProvidersData(providerNames, ciSecret.Data)
+			} else {
+				Expect(ok).To(BeTrue(), "ProviderList secret was not found")
+			}
+		})
 		//add dbaas scheme for inventory creation
 		scheme := runtime.NewScheme()
 		err = dbaasv1alpha1.AddToScheme(scheme)
@@ -255,15 +256,15 @@ var _ = Describe("Rhoda e2e Test", func() {
 		//selector for checking the Data Services button
 		selector := "#page-sidebar div ul li button"
 		url := fmt.Sprintf("https://%s/dashboards", domain)
-		//	url := "https://console-openshift-console.apps.rhoda-lab.51ty.p1.openshiftapps.com/dashboards"
 
+		By("Navigating to the main page to get the list of buttons")
 		if err := chromedp.Run(ctx,
 			SetOpenShiftCookie(config.BearerToken, domain),
 			chromedp.Navigate(url),
 			chromedp.WaitVisible(`#page-sidebar`),
 			chromedp.Nodes(selector, &nodesButtonList),
 		); err != nil {
-			AbortSuite(err.Error())
+			Expect(err).NotTo(HaveOccurred())
 		}
 
 		selectorLi := "section ul li a"
