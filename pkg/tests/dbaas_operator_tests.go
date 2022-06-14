@@ -44,10 +44,12 @@ var _ = Describe("Rhoda e2e Test", func() {
 
 	Context("Get all the providers and loop through it to create Secrets and Inventory", func() {
 		var providers []ProviderAccount
-		//Get ci-secret's data
+		var ciSecret *core.Secret
+		var client k8sClient.Client
 		clientset, err := kubernetes.NewForConfig(config)
 		Expect(err).NotTo(HaveOccurred())
-		var ciSecret *core.Secret
+
+		//Set config and get ci-secret's data
 		It("Getting ci-secret and providerList secret", func() {
 			ciSecret, err = clientset.CoreV1().Secrets("osde2e-ci-secrets").Get(context.TODO(), "ci-secrets", meta.GetOptions{})
 			Expect(err).NotTo(HaveOccurred())
@@ -59,15 +61,15 @@ var _ = Describe("Rhoda e2e Test", func() {
 			} else {
 				Expect(ok).To(BeTrue(), "ProviderList secret was not found")
 			}
+
+			//add dbaas scheme for inventory creation
+			scheme := runtime.NewScheme()
+			err = dbaasv1alpha1.AddToScheme(scheme)
+			Expect(err).NotTo(HaveOccurred())
+
+			client, err = k8sClient.New(config, k8sClient.Options{Scheme: scheme})
+			Expect(err).NotTo(HaveOccurred())
 		})
-		//add dbaas scheme for inventory creation
-		scheme := runtime.NewScheme()
-		err = dbaasv1alpha1.AddToScheme(scheme)
-		Expect(err).NotTo(HaveOccurred())
-
-		client, err := k8sClient.New(config, k8sClient.Options{Scheme: scheme})
-		Expect(err).NotTo(HaveOccurred())
-
 		//loop through providers
 		for i := range providers {
 			provider := providers[i]
