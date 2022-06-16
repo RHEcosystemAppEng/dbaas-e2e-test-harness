@@ -46,11 +46,12 @@ var _ = Describe("Rhoda e2e Test", func() {
 		var providers []ProviderAccount
 		var ciSecret *core.Secret
 		var client k8sClient.Client
-		clientset, err := kubernetes.NewForConfig(config)
-		Expect(err).NotTo(HaveOccurred())
+		var clientset *kubernetes.Clientset
 
 		//Set config and get ci-secret's data
 		It("Getting ci-secret and providerList secret", func() {
+			clientset, err := kubernetes.NewForConfig(config)
+			Expect(err).NotTo(HaveOccurred())
 			ciSecret, err = clientset.CoreV1().Secrets("osde2e-ci-secrets").Get(context.TODO(), "ci-secrets", meta.GetOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			//get the list of providers by getting providerList secret
@@ -59,7 +60,7 @@ var _ = Describe("Rhoda e2e Test", func() {
 				providerNames := strings.Split(string(providerListSecret), ",")
 				providers = getProvidersData(providerNames, ciSecret.Data)
 			} else {
-				Expect(ok).To(BeTrue(), "ProviderList secret was not found")
+				Expect(ok).To(BeTrue(), "providerList secret was not found")
 			}
 
 			//add dbaas scheme for inventory creation
@@ -122,7 +123,7 @@ var _ = Describe("Rhoda e2e Test", func() {
 					},
 					Data: provider.SecretData,
 				}
-				_, err = clientset.CoreV1().Secrets("openshift-dbaas-operator").Create(context.TODO(), &secret, meta.CreateOptions{})
+				_, err := clientset.CoreV1().Secrets("openshift-dbaas-operator").Create(context.TODO(), &secret, meta.CreateOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
 				//create inventory
