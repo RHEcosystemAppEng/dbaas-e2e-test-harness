@@ -29,22 +29,23 @@ import (
 )
 
 var _ = Describe("Rhoda e2e Test", func() {
-	config := getConfig()
 	namespace := "redhat-dbaas-operator"
 
 	Context("Check operator installation", func() {
-		apiextensions, err := apiserver.NewForConfig(config)
-		Expect(err).NotTo(HaveOccurred())
 		It("Should pass when operator installation is validated", func() {
 			fmt.Println("checking operator installation")
+			config, err := getConfig()
+			Expect(err).NotTo(HaveOccurred())
+			apiextensions, err := apiserver.NewForConfig(config)
+			Expect(err).NotTo(HaveOccurred())
 			// Make sure the CRD exists
-			_, err := apiextensions.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), "dbaasplatforms.dbaas.redhat.com", meta.GetOptions{})
+			_, err = apiextensions.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), "dbaasplatforms.dbaas.redhat.com", meta.GetOptions{})
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
 	Context("Test all the providers", func() {
-		providers, client, clientset, err := setupProviders(config)
+		providers, client, clientset, err := setupProviders()
 		if err != nil {
 			It("Error Occurred", func() {
 				Expect(err).NotTo(HaveOccurred())
@@ -133,11 +134,6 @@ var _ = Describe("Rhoda e2e Test", func() {
 					err = client.Create(context.Background(), &inventory)
 					Expect(err).NotTo(HaveOccurred())
 
-					//sleep timer to make sure things run in parallel
-					//fmt.Printf("Current Unix Time: %v\n", time.Now())
-					//time.Sleep(30 * time.Second)
-					//fmt.Printf("Current Unix Time: %v\n", time.Now())
-
 					//Check inventories status
 					inventoryStatusCheck := dbaasv1alpha1.DBaaSInventory{}
 					Eventually(func() bool {
@@ -224,6 +220,8 @@ var _ = Describe("Rhoda e2e Test", func() {
 		routev1.Install(scheme)
 		err := dbaasv1alpha1.AddToScheme(scheme)
 		Expect(err).NotTo(HaveOccurred())
+		config, err := getConfig()
+		Expect(err).NotTo(HaveOccurred())
 		client, err := k8sClient.New(config, k8sClient.Options{Scheme: scheme})
 		Expect(err).NotTo(HaveOccurred())
 		route := routev1.Route{}
@@ -281,18 +279,20 @@ var _ = Describe("Rhoda e2e Test", func() {
 	})
 })
 
-func setupProviders(config *rest.Config) ([]ProviderAccount, k8sClient.Client, *kubernetes.Clientset, interface{}) {
+func setupProviders() (providers []ProviderAccount, client k8sClient.Client, clientset *kubernetes.Clientset, err error) {
 
 	//Set config and get ci-secret's data
-	var providers []ProviderAccount
-	var err error
-	clientset, err := kubernetes.NewForConfig(config)
+	config, err := getConfig()
 	if err != nil {
-		return nil, nil, nil, err
+		return
+	}
+	clientset, err = kubernetes.NewForConfig(config)
+	if err != nil {
+		return
 	}
 	ciSecret, err := clientset.CoreV1().Secrets("osde2e-ci-secrets").Get(context.TODO(), "ci-secrets", meta.GetOptions{})
 	if err != nil {
-		return nil, nil, nil, err
+		return
 	}
 	//get the list of providers by getting providerList secret
 	if providerListSecret, ok := ciSecret.Data["providerList"]; ok {
@@ -300,21 +300,18 @@ func setupProviders(config *rest.Config) ([]ProviderAccount, k8sClient.Client, *
 		providerNames := strings.Split(string(providerListSecret), ",")
 		providers = getProvidersData(providerNames, ciSecret.Data)
 	} else {
-		err := errors.New("could not find providerList Secret")
-		return nil, nil, nil, err
+		err = errors.New("could not find providerList Secret")
+		return
 	}
 
 	//add dbaas scheme for inventory creation
 	scheme := runtime.NewScheme()
 	err = dbaasv1alpha1.AddToScheme(scheme)
 	if err != nil {
-		return nil, nil, nil, err
+		return
 	}
-	client, err := k8sClient.New(config, k8sClient.Options{Scheme: scheme})
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return providers, client, clientset, err
+	client, err = k8sClient.New(config, k8sClient.Options{Scheme: scheme})
+	return
 }
 
 func getHref(dataServiceNode []*cdp.Node) string {
@@ -367,10 +364,8 @@ func getProvidersData(providerNames []string, ciSecretData map[string][]byte) []
 	return providers
 }
 
-func getConfig() *rest.Config {
+func getConfig() (config *rest.Config, err error) {
 	fmt.Println("Running getConfig")
-	var config *rest.Config
-	var err error
 	if os.Getenv("KUBERNETES_SERVICE_HOST") == "" {
 		var kubeconfig *string
 		if home := homedir.HomeDir(); home != "" {
@@ -386,10 +381,7 @@ func getConfig() *rest.Config {
 	} else {
 		config, err = rest.InClusterConfig()
 	}
-	if err != nil {
-		err.Error()
-	}
-	return config
+	return
 }
 
 func SetOpenShiftCookie(tokenValue, domain string) chromedp.Action {
