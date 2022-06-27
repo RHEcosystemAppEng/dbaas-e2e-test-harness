@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	dbaasv1alpha1 "github.com/RHEcosystemAppEng/dbaas-operator/api/v1alpha1"
@@ -28,206 +29,181 @@ import (
 )
 
 var _ = Describe("Rhoda e2e Test", func() {
-	config := getConfig()
-	namespace := "openshift-dbaas-operator"
+	namespace := "redhat-dbaas-operator"
 
 	Context("Check operator installation", func() {
-		apiextensions, err := apiserver.NewForConfig(config)
-		Expect(err).NotTo(HaveOccurred())
 		It("Should pass when operator installation is validated", func() {
 			fmt.Println("checking operator installation")
+			config, err := getConfig()
+			Expect(err).NotTo(HaveOccurred())
+			apiextensions, err := apiserver.NewForConfig(config)
+			Expect(err).NotTo(HaveOccurred())
 			// Make sure the CRD exists
-			_, err := apiextensions.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), "dbaasplatforms.dbaas.redhat.com", meta.GetOptions{})
+			_, err = apiextensions.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), "dbaasplatforms.dbaas.redhat.com", meta.GetOptions{})
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
-	Context("Get all the providers and loop through it to create Secrets and Inventory", func() {
-		var providers []ProviderAccount
-		var ciSecret *core.Secret
-		var client k8sClient.Client
-		var clientset *kubernetes.Clientset
+	Context("Test all the providers", func() {
+		providers, client, clientset, err := setupProviders()
+		if err != nil {
+			It("Error Occurred", func() {
+				Expect(err).NotTo(HaveOccurred())
+			})
+		} else {
+			//loop through providers
+			for i := range providers {
+				provider := providers[i]
+				It("Should pass when secret and provider created and connection status is checked for "+provider.ProviderName, func() {
+					DeferCleanup(func() {
+						fmt.Println("DeferCleanup Started")
+						fmt.Println("deleting Secret: " + provider.SecretName)
+						Expect(clientset.CoreV1().Secrets(namespace).Delete(context.Background(), provider.SecretName, meta.DeleteOptions{})).Should(Succeed())
 
-		//Set config and get ci-secret's data
-		It("Getting ci-secret and providerList secret", func() {
-			clientset, err := kubernetes.NewForConfig(config)
-			Expect(err).NotTo(HaveOccurred())
-			ciSecret, err = clientset.CoreV1().Secrets("osde2e-ci-secrets").Get(context.TODO(), "ci-secrets", meta.GetOptions{})
-			Expect(err).NotTo(HaveOccurred())
-			//get the list of providers by getting providerList secret
-			if providerListSecret, ok := ciSecret.Data["providerList"]; ok {
-				//fmt.Printf("providerListSecret = %s, ok = %v\n", providerListSecret, ok)
-				providerNames := strings.Split(string(providerListSecret), ",")
-				providers = getProvidersData(providerNames, ciSecret.Data)
-			} else {
-				Expect(ok).To(BeTrue(), "providerList secret was not found")
-			}
+						fmt.Println("deleting Connection and Provider for: " + provider.ProviderName)
 
-			//add dbaas scheme for inventory creation
-			scheme := runtime.NewScheme()
-			err = dbaasv1alpha1.AddToScheme(scheme)
-			Expect(err).NotTo(HaveOccurred())
+						By("deleting DBaaSConnection")
+						inventory := dbaasv1alpha1.DBaaSInventory{}
 
-			client, err = k8sClient.New(config, k8sClient.Options{Scheme: scheme})
-			Expect(err).NotTo(HaveOccurred())
-		})
-		//loop through providers
-		for i := range providers {
-			provider := providers[i]
-			It("Should pass when secret and provider created and connection status is checked for "+provider.ProviderName, func() {
-				DeferCleanup(func() {
-					fmt.Println("DeferCleanup Started")
-					fmt.Println("deleting Secret: " + provider.SecretName)
-					Expect(clientset.CoreV1().Secrets("openshift-dbaas-operator").Delete(context.Background(), provider.SecretName, meta.DeleteOptions{})).Should(Succeed())
-
-					fmt.Println("deleting Connection and Provider for: " + provider.ProviderName)
-
-					By("deleting DBaaSConnection")
-					inventory := dbaasv1alpha1.DBaaSInventory{}
-
-					//get Inventory
-					err := client.Get(context.Background(), k8sClient.ObjectKey{
-						Namespace: namespace,
-						Name:      "provider-acct-test-e2e-" + provider.ProviderName,
-					}, &inventory)
-					Expect(err).NotTo(HaveOccurred())
-					if len(inventory.Status.Instances) > 0 {
-						fmt.Println(inventory.Status.Instances[0].Name)
-
-						//get inventory's first dbaas connection
-						dbaaSConnection := dbaasv1alpha1.DBaaSConnection{}
-						err = client.Get(context.Background(), k8sClient.ObjectKey{
+						//get Inventory
+						err := client.Get(context.Background(), k8sClient.ObjectKey{
 							Namespace: namespace,
-							Name:      inventory.Status.Instances[0].Name,
-						}, &dbaaSConnection)
+							Name:      "provider-acct-test-e2e-" + provider.ProviderName,
+						}, &inventory)
 						Expect(err).NotTo(HaveOccurred())
-						fmt.Println("deleting dbaas connection: " + inventory.Status.Instances[0].Name)
-						Expect(client.Delete(context.Background(), &dbaaSConnection)).Should(Succeed())
-					}
+						if len(inventory.Status.Instances) > 0 {
+							fmt.Println(inventory.Status.Instances[0].Name)
 
-					By("deleting Provider Account")
-					fmt.Println("deleting provider Acct: " + "provider-acct-test-e2e-" + provider.ProviderName)
-					Expect(client.Delete(context.Background(), &inventory)).Should(Succeed())
-				})
-
-				fmt.Println("Creating secret for : " + provider.ProviderName)
-				//create secret
-				secret := core.Secret{
-					TypeMeta: meta.TypeMeta{
-						Kind:       "Secret",
-						APIVersion: "v1",
-					},
-					ObjectMeta: meta.ObjectMeta{
-						Name:      provider.SecretName,
-						Namespace: namespace,
-					},
-					Data: provider.SecretData,
-				}
-				_, err := clientset.CoreV1().Secrets("openshift-dbaas-operator").Create(context.TODO(), &secret, meta.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				//create inventory
-				fmt.Println("Creating inventory for : " + provider.ProviderName)
-				inventory := dbaasv1alpha1.DBaaSInventory{
-					TypeMeta: meta.TypeMeta{
-						Kind:       "DBaaSInventory",
-						APIVersion: "dbaas.redhat.com/v1alpha1",
-					},
-					ObjectMeta: meta.ObjectMeta{
-						Name:      "provider-acct-test-e2e-" + provider.ProviderName,
-						Namespace: namespace,
-						Labels:    map[string]string{"related-to": "dbaas-operator", "type": "dbaas-vendor-service"},
-					},
-					Spec: dbaasv1alpha1.DBaaSOperatorInventorySpec{
-						ProviderRef: dbaasv1alpha1.NamespacedName{
-							Namespace: namespace,
-							Name:      string(provider.SecretData["providerType"]),
-						},
-						DBaaSInventorySpec: dbaasv1alpha1.DBaaSInventorySpec{
-							CredentialsRef: &dbaasv1alpha1.NamespacedName{
+							//get inventory's first dbaas connection
+							dbaaSConnection := dbaasv1alpha1.DBaaSConnection{}
+							err = client.Get(context.Background(), k8sClient.ObjectKey{
 								Namespace: namespace,
-								Name:      provider.SecretName,
-							},
-						},
-					},
-				}
-				err = client.Create(context.Background(), &inventory)
-				Expect(err).NotTo(HaveOccurred())
-
-				//sleep timer to make sure things run in parallel
-				//fmt.Printf("Current Unix Time: %v\n", time.Now())
-				//time.Sleep(30 * time.Second)
-				//fmt.Printf("Current Unix Time: %v\n", time.Now())
-
-				//Check inventories status
-				inventoryStatusCheck := dbaasv1alpha1.DBaaSInventory{}
-				Eventually(func() bool {
-					fmt.Println("Checking status for : " + provider.ProviderName)
-					err := client.Get(context.Background(), k8sClient.ObjectKey{
-						Namespace: namespace,
-						Name:      "provider-acct-test-e2e-" + provider.ProviderName,
-					}, &inventoryStatusCheck)
-					Expect(err).NotTo(HaveOccurred())
-					if len(inventoryStatusCheck.Status.Conditions) > 0 {
-						for _, inventStatus := range inventoryStatusCheck.Status.Conditions {
-							if inventStatus.Type == "SpecSynced" {
-								return inventStatus.Status == "True"
-							}
+								Name:      inventory.Status.Instances[0].Name,
+							}, &dbaaSConnection)
+							Expect(err).NotTo(HaveOccurred())
+							fmt.Println("deleting dbaas connection: " + inventory.Status.Instances[0].Name)
+							Expect(client.Delete(context.Background(), &dbaaSConnection)).Should(Succeed())
 						}
-						return false
-					} else {
-						fmt.Println("inventory.Status.Conditions Len is 0")
-						return false
-					}
-				}, 60*time.Second, 5*time.Second).Should(BeTrue(), "Inventory Status is not Ready for connection")
 
-				//test connection
-				fmt.Println(inventoryStatusCheck.Name)
-				if len(inventoryStatusCheck.Status.Instances) > 0 {
-					testDBaaSConnection := dbaasv1alpha1.DBaaSConnection{
+						By("deleting Provider Account")
+						fmt.Println("deleting provider Acct: " + "provider-acct-test-e2e-" + provider.ProviderName)
+						Expect(client.Delete(context.Background(), &inventory)).Should(Succeed())
+					})
+
+					fmt.Println("Creating secret for : " + provider.ProviderName)
+					//create secret
+					secret := core.Secret{
 						TypeMeta: meta.TypeMeta{
-							Kind:       "DBaaSConnection",
+							Kind:       "Secret",
+							APIVersion: "v1",
+						},
+						ObjectMeta: meta.ObjectMeta{
+							Name:      provider.SecretName,
+							Namespace: namespace,
+						},
+						Data: provider.SecretData,
+					}
+					_, err := clientset.CoreV1().Secrets(namespace).Create(context.TODO(), &secret, meta.CreateOptions{})
+					Expect(err).NotTo(HaveOccurred())
+
+					//create inventory
+					fmt.Println("Creating inventory for : " + provider.ProviderName)
+					inventory := dbaasv1alpha1.DBaaSInventory{
+						TypeMeta: meta.TypeMeta{
+							Kind:       "DBaaSInventory",
 							APIVersion: "dbaas.redhat.com/v1alpha1",
 						},
 						ObjectMeta: meta.ObjectMeta{
-							Name:      inventoryStatusCheck.Status.Instances[0].Name,
+							Name:      "provider-acct-test-e2e-" + provider.ProviderName,
 							Namespace: namespace,
+							Labels:    map[string]string{"related-to": "dbaas-operator", "type": "dbaas-vendor-service"},
 						},
-						Spec: dbaasv1alpha1.DBaaSConnectionSpec{
-							InventoryRef: dbaasv1alpha1.NamespacedName{
+						Spec: dbaasv1alpha1.DBaaSOperatorInventorySpec{
+							ProviderRef: dbaasv1alpha1.NamespacedName{
 								Namespace: namespace,
-								Name:      inventoryStatusCheck.Name,
+								Name:      string(provider.SecretData["providerType"]),
 							},
-							InstanceID: inventoryStatusCheck.Status.Instances[0].InstanceID,
+							DBaaSInventorySpec: dbaasv1alpha1.DBaaSInventorySpec{
+								CredentialsRef: &dbaasv1alpha1.NamespacedName{
+									Namespace: namespace,
+									Name:      provider.SecretName,
+								},
+							},
 						},
 					}
-					Expect(client.Create(context.Background(), &testDBaaSConnection)).Should(Succeed())
+					err = client.Create(context.Background(), &inventory)
+					Expect(err).NotTo(HaveOccurred())
 
-					By("checking DBaaSConnection status for: " + inventoryStatusCheck.Status.Instances[0].Name)
+					//Check inventories status
+					inventoryStatusCheck := dbaasv1alpha1.DBaaSInventory{}
 					Eventually(func() bool {
-						dbaaSConnectionCheck := dbaasv1alpha1.DBaaSConnection{}
-						fmt.Println("checking DBaaSConnection status for: " + inventoryStatusCheck.Status.Instances[0].Name)
+						fmt.Println("Checking status for : " + provider.ProviderName)
 						err := client.Get(context.Background(), k8sClient.ObjectKey{
 							Namespace: namespace,
-							Name:      inventoryStatusCheck.Status.Instances[0].Name,
-						}, &dbaaSConnectionCheck)
+							Name:      "provider-acct-test-e2e-" + provider.ProviderName,
+						}, &inventoryStatusCheck)
 						Expect(err).NotTo(HaveOccurred())
-						if len(dbaaSConnectionCheck.Status.Conditions) > 0 {
-							for _, connStatus := range dbaaSConnectionCheck.Status.Conditions {
-								if connStatus.Type == "ReadyForBinding" {
-									return connStatus.Status == "True"
+						if len(inventoryStatusCheck.Status.Conditions) > 0 {
+							for _, inventStatus := range inventoryStatusCheck.Status.Conditions {
+								if inventStatus.Type == "SpecSynced" {
+									return inventStatus.Status == "True"
 								}
 							}
 							return false
 						} else {
-							fmt.Println("dbaaSConnection.Status.Conditions Len is 0")
+							fmt.Println("inventory.Status.Conditions Len is 0")
 							return false
 						}
-					}, 60*time.Second, 5*time.Second).Should(BeTrue())
-				} else {
-					fmt.Println("No instances to connect")
-				}
-			})
+					}, 60*time.Second, 5*time.Second).Should(BeTrue(), "Inventory Status is not Ready for connection")
+
+					//test connection
+					fmt.Println(inventoryStatusCheck.Name)
+					if len(inventoryStatusCheck.Status.Instances) > 0 {
+						testDBaaSConnection := dbaasv1alpha1.DBaaSConnection{
+							TypeMeta: meta.TypeMeta{
+								Kind:       "DBaaSConnection",
+								APIVersion: "dbaas.redhat.com/v1alpha1",
+							},
+							ObjectMeta: meta.ObjectMeta{
+								Name:      inventoryStatusCheck.Status.Instances[0].Name,
+								Namespace: namespace,
+							},
+							Spec: dbaasv1alpha1.DBaaSConnectionSpec{
+								InventoryRef: dbaasv1alpha1.NamespacedName{
+									Namespace: namespace,
+									Name:      inventoryStatusCheck.Name,
+								},
+								InstanceID: inventoryStatusCheck.Status.Instances[0].InstanceID,
+							},
+						}
+						Expect(client.Create(context.Background(), &testDBaaSConnection)).Should(Succeed())
+
+						By("checking DBaaSConnection status for: " + inventoryStatusCheck.Status.Instances[0].Name)
+						Eventually(func() bool {
+							dbaaSConnectionCheck := dbaasv1alpha1.DBaaSConnection{}
+							fmt.Println("checking DBaaSConnection status for: " + inventoryStatusCheck.Status.Instances[0].Name)
+							err := client.Get(context.Background(), k8sClient.ObjectKey{
+								Namespace: namespace,
+								Name:      inventoryStatusCheck.Status.Instances[0].Name,
+							}, &dbaaSConnectionCheck)
+							Expect(err).NotTo(HaveOccurred())
+							if len(dbaaSConnectionCheck.Status.Conditions) > 0 {
+								for _, connStatus := range dbaaSConnectionCheck.Status.Conditions {
+									if connStatus.Type == "ReadyForBinding" {
+										return connStatus.Status == "True"
+									}
+								}
+								return false
+							} else {
+								fmt.Println("dbaaSConnection.Status.Conditions Len is 0")
+								return false
+							}
+						}, 60*time.Second, 5*time.Second).Should(BeTrue())
+					} else {
+						fmt.Println("No instances to connect")
+					}
+				})
+			}
 		}
 	})
 
@@ -243,6 +219,8 @@ var _ = Describe("Rhoda e2e Test", func() {
 		scheme := runtime.NewScheme()
 		routev1.Install(scheme)
 		err := dbaasv1alpha1.AddToScheme(scheme)
+		Expect(err).NotTo(HaveOccurred())
+		config, err := getConfig()
 		Expect(err).NotTo(HaveOccurred())
 		client, err := k8sClient.New(config, k8sClient.Options{Scheme: scheme})
 		Expect(err).NotTo(HaveOccurred())
@@ -301,6 +279,41 @@ var _ = Describe("Rhoda e2e Test", func() {
 	})
 })
 
+func setupProviders() (providers []ProviderAccount, client k8sClient.Client, clientset *kubernetes.Clientset, err error) {
+
+	//Set config and get ci-secret's data
+	config, err := getConfig()
+	if err != nil {
+		return
+	}
+	clientset, err = kubernetes.NewForConfig(config)
+	if err != nil {
+		return
+	}
+	ciSecret, err := clientset.CoreV1().Secrets("osde2e-ci-secrets").Get(context.TODO(), "ci-secrets", meta.GetOptions{})
+	if err != nil {
+		return
+	}
+	//get the list of providers by getting providerList secret
+	if providerListSecret, ok := ciSecret.Data["providerList"]; ok {
+		//fmt.Printf("providerListSecret = %s, ok = %v\n", providerListSecret, ok)
+		providerNames := strings.Split(string(providerListSecret), ",")
+		providers = getProvidersData(providerNames, ciSecret.Data)
+	} else {
+		err = errors.New("could not find providerList Secret")
+		return
+	}
+
+	//add dbaas scheme for inventory creation
+	scheme := runtime.NewScheme()
+	err = dbaasv1alpha1.AddToScheme(scheme)
+	if err != nil {
+		return
+	}
+	client, err = k8sClient.New(config, k8sClient.Options{Scheme: scheme})
+	return
+}
+
 func getHref(dataServiceNode []*cdp.Node) string {
 	for _, aNode := range dataServiceNode {
 		text := aNode.Children[0].NodeValue
@@ -319,13 +332,11 @@ func getHref(dataServiceNode []*cdp.Node) string {
 
 func getLi(nodesButtonList []*cdp.Node) *cdp.Node {
 	for _, node := range nodesButtonList {
-		//NodeName is the button here, looping through buttons to get Data services
-		fmt.Println(node.NodeName)
-
+		//NodeName is the BUTTON here, looping through buttons to get Data services
 		for _, child := range node.Children {
 			//getting Data Services Button
-			fmt.Println(child.NodeValue)
 			if child.NodeValue == "Data Services" {
+				fmt.Println("Found Data Services button")
 				//get the parent's parent which is Li to click on the Database Access button
 				return child.Parent.Parent
 			}
@@ -353,10 +364,8 @@ func getProvidersData(providerNames []string, ciSecretData map[string][]byte) []
 	return providers
 }
 
-func getConfig() *rest.Config {
+func getConfig() (config *rest.Config, err error) {
 	fmt.Println("Running getConfig")
-	var config *rest.Config
-	var err error
 	if os.Getenv("KUBERNETES_SERVICE_HOST") == "" {
 		var kubeconfig *string
 		if home := homedir.HomeDir(); home != "" {
@@ -372,10 +381,7 @@ func getConfig() *rest.Config {
 	} else {
 		config, err = rest.InClusterConfig()
 	}
-	if err != nil {
-		panic(err.Error())
-	}
-	return config
+	return
 }
 
 func SetOpenShiftCookie(tokenValue, domain string) chromedp.Action {
