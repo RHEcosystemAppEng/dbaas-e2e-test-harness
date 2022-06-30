@@ -4,12 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
-	"time"
-
 	dbaasv1alpha1 "github.com/RHEcosystemAppEng/dbaas-operator/api/v1alpha1"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
@@ -25,7 +19,12 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+	"os"
+	"path/filepath"
+	"regexp"
 	k8sClient "sigs.k8s.io/controller-runtime/pkg/client"
+	"strings"
+	"time"
 )
 
 var _ = Describe("Rhoda e2e Test", func() {
