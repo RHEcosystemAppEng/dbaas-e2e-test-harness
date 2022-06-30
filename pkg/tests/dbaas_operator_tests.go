@@ -4,6 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"time"
+
 	dbaasv1alpha1 "github.com/RHEcosystemAppEng/dbaas-operator/api/v1alpha1"
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/network"
@@ -19,12 +25,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
-	"os"
-	"path/filepath"
-	"regexp"
 	k8sClient "sigs.k8s.io/controller-runtime/pkg/client"
-	"strings"
-	"time"
 )
 
 var _ = Describe("Rhoda e2e Test", func() {
@@ -161,10 +162,9 @@ var _ = Describe("Rhoda e2e Test", func() {
 								}
 							}
 							return false
-						} else {
-							fmt.Println("inventory.Status.Conditions Len is 0")
-							return false
 						}
+						fmt.Println("inventory.Status.Conditions Len is 0")
+						return false
 					}, 60*time.Second, 5*time.Second).Should(BeTrue(), "Inventory Status is not Ready for connection")
 
 					//test connection
@@ -205,10 +205,9 @@ var _ = Describe("Rhoda e2e Test", func() {
 									}
 								}
 								return false
-							} else {
-								fmt.Println("dbaaSConnection.Status.Conditions Len is 0")
-								return false
 							}
+							fmt.Println("dbaaSConnection.Status.Conditions Len is 0")
+							return false
 						}, 60*time.Second, 5*time.Second).Should(BeTrue())
 					} else {
 						fmt.Println("No instances to connect")
@@ -228,8 +227,9 @@ var _ = Describe("Rhoda e2e Test", func() {
 
 		//Adding route to the scheme to get the domain
 		scheme := runtime.NewScheme()
-		routev1.Install(scheme)
-		err := dbaasv1alpha1.AddToScheme(scheme)
+		err := routev1.Install(scheme)
+		Expect(err).NotTo(HaveOccurred())
+		err = dbaasv1alpha1.AddToScheme(scheme)
 		Expect(err).NotTo(HaveOccurred())
 		config, err := getConfig()
 		Expect(err).NotTo(HaveOccurred())
@@ -251,7 +251,7 @@ var _ = Describe("Rhoda e2e Test", func() {
 
 		By("Navigating to the main page to get the list of buttons")
 		if err := chromedp.Run(ctx,
-			SetOpenShiftCookie(config.BearerToken, domain),
+			setOpenShiftCookie(config.BearerToken, domain),
 			chromedp.Navigate(url),
 			chromedp.WaitVisible(`#page-sidebar`),
 			chromedp.Nodes(selector, &nodesButtonList),
@@ -271,7 +271,7 @@ var _ = Describe("Rhoda e2e Test", func() {
 		href := getHref(dataServiceNode)
 		fmt.Println(href)
 		u := fmt.Sprintf("https://%s%s", domain, href)
-		fmt.Printf(u)
+		fmt.Println(u)
 		dataAccessSelector := "#content-scrollable h1 div span"
 		var dataAccessNodes []*cdp.Node
 		err = chromedp.Run(ctx,
@@ -392,7 +392,7 @@ func getConfig() (config *rest.Config, err error) {
 	return
 }
 
-func SetOpenShiftCookie(tokenValue, domain string) chromedp.Action {
+func setOpenShiftCookie(tokenValue, domain string) chromedp.Action {
 	return chromedp.ActionFunc(func(ctx context.Context) error {
 		expr := cdp.TimeSinceEpoch(time.Now().Add(180 * 24 * time.Hour))
 		success := network.SetCookie("openshift-session-token", tokenValue).
