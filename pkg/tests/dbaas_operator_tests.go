@@ -3,7 +3,6 @@ package tests
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	dbaasv1alpha1 "github.com/RHEcosystemAppEng/dbaas-operator/api/v1alpha1"
 	"github.com/chromedp/cdproto/cdp"
@@ -54,6 +53,18 @@ var _ = Describe("Rhoda e2e Test", func() {
 			//loop through providers
 			for i := range providers {
 				provider := providers[i]
+				providerType := string(provider.SecretData["providerType"])
+				BeforeEach(func() {
+					By(fmt.Sprintf("Checking if provider operator is ready: %s", provider.ProviderName))
+					Eventually(func() bool {
+						if err := client.Get(context.Background(), k8sClient.ObjectKey{
+							Name: providerType,
+						}, &dbaasv1alpha1.DBaaSProvider{}); err != nil {
+							return false
+						}
+						return true
+					}, time.Second*120, time.Second).Should(BeTrue())
+				})
 				It("Should pass when secret and provider created and connection status is checked for "+provider.ProviderName, func() {
 					DeferCleanup(func() {
 						fmt.Println("DeferCleanup Started")
@@ -121,7 +132,7 @@ var _ = Describe("Rhoda e2e Test", func() {
 						Spec: dbaasv1alpha1.DBaaSOperatorInventorySpec{
 							ProviderRef: dbaasv1alpha1.NamespacedName{
 								Namespace: namespace,
-								Name:      string(provider.SecretData["providerType"]),
+								Name:      providerType,
 							},
 							DBaaSInventorySpec: dbaasv1alpha1.DBaaSInventorySpec{
 								CredentialsRef: &dbaasv1alpha1.NamespacedName{
@@ -367,17 +378,14 @@ func getProvidersData(providerNames []string, ciSecretData map[string][]byte) []
 func getConfig() (config *rest.Config, err error) {
 	fmt.Println("Running getConfig")
 	if os.Getenv("KUBERNETES_SERVICE_HOST") == "" {
-		var kubeconfig *string
-		if home := homedir.HomeDir(); home != "" {
-			kubeconfig = flag.String("kconfig", filepath.Join(home, ".kube", "config"), "(optional) absolute path to the kubeconfig file")
+		var kubeconfig string
+		if kconfig := os.Getenv("KUBECONFIG"); len(kconfig) > 0 {
+			kubeconfig = kconfig
 		} else {
-			kubeconfig = flag.String("kubeconfig", "", "absolute path to the kubeconfig file")
+			kubeconfig = filepath.Join(homedir.HomeDir(), ".kube", "config")
 		}
-		flag.Parse()
-
 		// use the current context in kubeconfig
-		config, err = clientcmd.BuildConfigFromFlags("", *kubeconfig)
-
+		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
 	} else {
 		config, err = rest.InClusterConfig()
 	}
