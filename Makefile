@@ -13,3 +13,14 @@ docker-build:
 
 docker-push:
 	docker push ${IMG}
+
+install-tools:
+	go install golang.org/x/tools/cmd/goimports@latest
+	go install github.com/mgechev/revive@latest
+
+fmt: install-tools
+	goimports -w .
+
+lint: install-tools
+	goimports -d .
+	revive -config $(DIR)config.toml ./...

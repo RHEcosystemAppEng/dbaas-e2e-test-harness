@@ -1,4 +1,4 @@
-package dbaas_e2e_test_harness
+package dbaase2e
 
 import (
 	"path/filepath"

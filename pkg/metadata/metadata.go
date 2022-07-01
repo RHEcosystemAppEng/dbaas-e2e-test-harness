@@ -23,9 +23,6 @@ func (m *metadata) WriteToJSON(outputFilename string) (err error) {
 		return err
 	}
 
-	if err = ioutil.WriteFile(outputFilename, data, os.FileMode(0644)); err != nil {
-		return err
-	}
-
-	return nil
+	err = ioutil.WriteFile(outputFilename, data, os.FileMode(0644))
+	return err
 }
