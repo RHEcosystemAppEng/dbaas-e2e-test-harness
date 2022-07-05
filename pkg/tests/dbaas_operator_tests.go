@@ -17,6 +17,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	routev1 "github.com/openshift/api/route/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	core "k8s.io/api/core/v1"
 	apiserver "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,6 +31,7 @@ import (
 
 var _ = Describe("Rhoda e2e Test", func() {
 	namespace := "redhat-dbaas-operator"
+	timeout := time.Second * 300
 
 	Context("Check operator installation", func() {
 		It("Should pass when operator installation is validated", func() {
@@ -38,9 +40,26 @@ var _ = Describe("Rhoda e2e Test", func() {
 			Expect(err).NotTo(HaveOccurred())
 			apiextensions, err := apiserver.NewForConfig(config)
 			Expect(err).NotTo(HaveOccurred())
+			scheme := runtime.NewScheme()
+			appsv1.AddToScheme(scheme)
+			client, err := k8sClient.New(config, k8sClient.Options{Scheme: scheme})
+			Expect(err).NotTo(HaveOccurred())
 			// Make sure the CRD exists
 			_, err = apiextensions.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), "dbaasplatforms.dbaas.redhat.com", meta.GetOptions{})
 			Expect(err).NotTo(HaveOccurred())
+			// Check if the dbaas operator pod is running
+			Eventually(func() bool {
+				deploy := appsv1.Deployment{}
+				err := client.Get(context.Background(), k8sClient.ObjectKey{
+					Namespace: namespace,
+					Name:      "dbaas-operator-controller-manager",
+				}, &deploy)
+				if err != nil || deploy.Status.AvailableReplicas < deploy.Status.Replicas {
+					return false
+				}
+				return true
+			}, timeout, time.Second).Should(BeTrue())
+
 		})
 	})
 
@@ -64,7 +83,7 @@ var _ = Describe("Rhoda e2e Test", func() {
 							return false
 						}
 						return true
-					}, time.Second*120, time.Second).Should(BeTrue())
+					}, timeout, time.Second).Should(BeTrue())
 				})
 				It("Should pass when secret and provider created and connection status is checked for "+provider.ProviderName, func() {
 					DeferCleanup(func() {
@@ -235,6 +254,20 @@ var _ = Describe("Rhoda e2e Test", func() {
 		Expect(err).NotTo(HaveOccurred())
 		client, err := k8sClient.New(config, k8sClient.Options{Scheme: scheme})
 		Expect(err).NotTo(HaveOccurred())
+		appsv1.AddToScheme(scheme)
+		// Check if the dynamic plugin has been deployed
+		Eventually(func() bool {
+			deploy := appsv1.Deployment{}
+			err := client.Get(context.Background(), k8sClient.ObjectKey{
+				Namespace: namespace,
+				Name:      "dbaas-dynamic-plugin",
+			}, &deploy)
+			if err != nil || deploy.Status.AvailableReplicas < deploy.Status.Replicas {
+				return false
+			}
+			return true
+		}, timeout, time.Second).Should(BeTrue())
+
 		route := routev1.Route{}
 		err = client.Get(context.Background(), k8sClient.ObjectKey{
 			Namespace: "openshift-console",
