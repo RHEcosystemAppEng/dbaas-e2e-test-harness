@@ -74,20 +74,9 @@ var _ = Describe("Rhoda e2e Test", func() {
 			for i := range providers {
 				provider := providers[i]
 				providerType := string(provider.SecretData["providerType"])
-				BeforeEach(func() {
-					By(fmt.Sprintf("Checking if provider operator is ready: %s", provider.ProviderName))
-					Eventually(func() bool {
-						if err := client.Get(context.Background(), k8sClient.ObjectKey{
-							Name: providerType,
-						}, &dbaasv1alpha1.DBaaSProvider{}); err != nil {
-							return false
-						}
-						return true
-					}, timeout, time.Second).Should(BeTrue())
-				})
 				It("Should pass when secret and provider created and connection status is checked for "+provider.ProviderName, func() {
 					DeferCleanup(func() {
-						fmt.Println("DeferCleanup Started")
+						By("Deleting Secret: " + provider.SecretName)
 						fmt.Println("deleting Secret: " + provider.SecretName)
 						Expect(clientset.CoreV1().Secrets(namespace).Delete(context.Background(), provider.SecretName, meta.DeleteOptions{})).Should(Succeed())
 
@@ -116,11 +105,22 @@ var _ = Describe("Rhoda e2e Test", func() {
 							Expect(client.Delete(context.Background(), &dbaaSConnection)).Should(Succeed())
 						}
 
-						By("deleting Provider Account")
+						By("deleting provider Acct: " + "provider-acct-test-e2e-" + provider.ProviderName)
 						fmt.Println("deleting provider Acct: " + "provider-acct-test-e2e-" + provider.ProviderName)
 						Expect(client.Delete(context.Background(), &inventory)).Should(Succeed())
 					})
 
+					By(fmt.Sprintf("Checking if provider operator is ready: %s", provider.ProviderName))
+					Eventually(func() bool {
+						if err := client.Get(context.Background(), k8sClient.ObjectKey{
+							Name: providerType,
+						}, &dbaasv1alpha1.DBaaSProvider{}); err != nil {
+							return false
+						}
+						return true
+					}, time.Second*120, time.Second).Should(BeTrue())
+
+					By(fmt.Sprintf("Creating secret for: %s", provider.ProviderName))
 					fmt.Println("Creating secret for : " + provider.ProviderName)
 					//create secret
 					secret := core.Secret{
@@ -138,6 +138,7 @@ var _ = Describe("Rhoda e2e Test", func() {
 					Expect(err).NotTo(HaveOccurred())
 
 					//create inventory
+					By(fmt.Sprintf("Creating inventory for: %s", provider.ProviderName))
 					fmt.Println("Creating inventory for : " + provider.ProviderName)
 					inventory := dbaasv1alpha1.DBaaSInventory{
 						TypeMeta: meta.TypeMeta{
@@ -166,6 +167,7 @@ var _ = Describe("Rhoda e2e Test", func() {
 					Expect(err).NotTo(HaveOccurred())
 
 					//Check inventories status
+					By(fmt.Sprintf("Checking status for: %s", provider.ProviderName))
 					inventoryStatusCheck := dbaasv1alpha1.DBaaSInventory{}
 					Eventually(func() bool {
 						fmt.Println("Checking status for : " + provider.ProviderName)
@@ -187,6 +189,7 @@ var _ = Describe("Rhoda e2e Test", func() {
 					}, 60*time.Second, 5*time.Second).Should(BeTrue(), "Inventory Status is not Ready for connection")
 
 					//test connection
+					By(fmt.Sprintf("Test connection for: %s", inventoryStatusCheck.Name))
 					fmt.Println(inventoryStatusCheck.Name)
 					if len(inventoryStatusCheck.Status.Instances) > 0 {
 						testDBaaSConnection := dbaasv1alpha1.DBaaSConnection{
