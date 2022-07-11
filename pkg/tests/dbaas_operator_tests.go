@@ -77,10 +77,7 @@ var _ = Describe("Rhoda e2e Test", func() {
 				It("Should pass when secret and provider created and connection status is checked for "+provider.ProviderName, func() {
 					DeferCleanup(func() {
 						By("Deleting Secret: " + provider.SecretName)
-						fmt.Println("deleting Secret: " + provider.SecretName)
 						Expect(clientset.CoreV1().Secrets(namespace).Delete(context.Background(), provider.SecretName, meta.DeleteOptions{})).Should(Succeed())
-
-						fmt.Println("deleting Connection and Provider for: " + provider.ProviderName)
 
 						By("deleting DBaaSConnection")
 						inventory := dbaasv1alpha1.DBaaSInventory{}
@@ -101,12 +98,11 @@ var _ = Describe("Rhoda e2e Test", func() {
 								Name:      inventory.Status.Instances[0].Name,
 							}, &dbaaSConnection)
 							Expect(err).NotTo(HaveOccurred())
-							fmt.Println("deleting dbaas connection: " + inventory.Status.Instances[0].Name)
+							//delete connection
 							Expect(client.Delete(context.Background(), &dbaaSConnection)).Should(Succeed())
 						}
 
 						By("deleting provider Acct: " + "provider-acct-test-e2e-" + provider.ProviderName)
-						fmt.Println("deleting provider Acct: " + "provider-acct-test-e2e-" + provider.ProviderName)
 						Expect(client.Delete(context.Background(), &inventory)).Should(Succeed())
 					})
 
@@ -121,7 +117,6 @@ var _ = Describe("Rhoda e2e Test", func() {
 					}, time.Second*120, time.Second).Should(BeTrue())
 
 					By(fmt.Sprintf("Creating secret for: %s", provider.ProviderName))
-					fmt.Println("Creating secret for : " + provider.ProviderName)
 					//create secret
 					secret := core.Secret{
 						TypeMeta: meta.TypeMeta{
@@ -139,7 +134,6 @@ var _ = Describe("Rhoda e2e Test", func() {
 
 					//create inventory
 					By(fmt.Sprintf("Creating inventory for: %s", provider.ProviderName))
-					fmt.Println("Creating inventory for : " + provider.ProviderName)
 					inventory := dbaasv1alpha1.DBaaSInventory{
 						TypeMeta: meta.TypeMeta{
 							Kind:       "DBaaSInventory",
@@ -170,7 +164,6 @@ var _ = Describe("Rhoda e2e Test", func() {
 					By(fmt.Sprintf("Checking status for: %s", provider.ProviderName))
 					inventoryStatusCheck := dbaasv1alpha1.DBaaSInventory{}
 					Eventually(func() bool {
-						fmt.Println("Checking status for : " + provider.ProviderName)
 						err := client.Get(context.Background(), k8sClient.ObjectKey{
 							Namespace: namespace,
 							Name:      "provider-acct-test-e2e-" + provider.ProviderName,
@@ -190,7 +183,6 @@ var _ = Describe("Rhoda e2e Test", func() {
 
 					//test connection
 					By(fmt.Sprintf("Test connection for: %s", inventoryStatusCheck.Name))
-					fmt.Println(inventoryStatusCheck.Name)
 					if len(inventoryStatusCheck.Status.Instances) > 0 {
 						testDBaaSConnection := dbaasv1alpha1.DBaaSConnection{
 							TypeMeta: meta.TypeMeta{
@@ -214,7 +206,6 @@ var _ = Describe("Rhoda e2e Test", func() {
 						By("checking DBaaSConnection status for: " + inventoryStatusCheck.Status.Instances[0].Name)
 						Eventually(func() bool {
 							dbaaSConnectionCheck := dbaasv1alpha1.DBaaSConnection{}
-							fmt.Println("checking DBaaSConnection status for: " + inventoryStatusCheck.Status.Instances[0].Name)
 							err := client.Get(context.Background(), k8sClient.ObjectKey{
 								Namespace: namespace,
 								Name:      inventoryStatusCheck.Status.Instances[0].Name,
@@ -277,7 +268,6 @@ var _ = Describe("Rhoda e2e Test", func() {
 			Name:      "console",
 		}, &route)
 		Expect(err).NotTo(HaveOccurred())
-		fmt.Println(route.Spec.Host)
 		domain := route.Spec.Host
 
 		var nodesButtonList []*cdp.Node
@@ -305,7 +295,6 @@ var _ = Describe("Rhoda e2e Test", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		href := getHref(dataServiceNode)
-		fmt.Println(href)
 		u := fmt.Sprintf("https://%s%s", domain, href)
 		fmt.Println(u)
 		dataAccessSelector := "#content-scrollable h1 div span"
@@ -363,8 +352,6 @@ func setupProviders() (providers []ProviderAccount, client k8sClient.Client, cli
 
 func getHref(dataServiceNode []*cdp.Node) string {
 	for _, aNode := range dataServiceNode {
-		text := aNode.Children[0].NodeValue
-		fmt.Println(text)
 		if aNode.Children[0].NodeValue == "Database Access" {
 			href := aNode.AttributeValue("href")
 			if !strings.Contains(href, "/ns/") {
