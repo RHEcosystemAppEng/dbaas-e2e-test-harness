@@ -30,7 +30,7 @@ import (
 )
 
 var _ = Describe("Rhoda e2e Test", func() {
-	namespace := "redhat-dbaas-operator"
+	namespace := getNamespace()
 	timeout := time.Second * 300
 
 	Context("Check operator installation", func() {
@@ -314,6 +314,25 @@ var _ = Describe("Rhoda e2e Test", func() {
 		}
 	})
 })
+
+func getNamespace() string {
+	config, err := getConfig()
+	if err != nil {
+		println(err)
+		return ""
+	}
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		println(err)
+		return ""
+	}
+	namespace, err := clientset.CoreV1().Namespaces().Get(context.TODO(), "openshift-dbaas-operator", meta.GetOptions{})
+	if err != nil {
+		return "redhat-dbaas-operator"
+	} else {
+		return namespace.ObjectMeta.Name
+	}
+}
 
 func setupProviders() (providers []ProviderAccount, client k8sClient.Client, clientset *kubernetes.Clientset, err error) {
 
